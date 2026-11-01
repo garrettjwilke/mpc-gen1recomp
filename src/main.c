@@ -239,34 +239,14 @@ int main(int argc, char **argv) {
 
     /* Runner setup */
     app.runner = g1_runner_create((enum g1_game_id)app.rm.selected_game, 44100);
-    if (app.runner) {
-        g1_runner_load_assets(app.runner, app.rm.games[app.rm.selected_game].rom_path);
-    }
 
     /* Overlay setup */
     ui_overlay_init(&app.overlay, bind_path, sett_path);
 
-    /* Initial screen state determination */
-    if (rom_manager_count_ready(&app.rm) > 0 && app.rm.games[app.rm.selected_game].cache_ready) {
-        ui_overlay_set_mode(&app.overlay, UI_MODE_GAMEPLAY);
-    } else if (app.rm.games[app.rm.selected_game].rom_found) {
-        rom_manager_start_extraction(&app.rm, (enum g1_game_id)app.rm.selected_game);
-        ui_overlay_set_mode(&app.overlay, UI_MODE_EXTRACTION);
-    } else if (rom_manager_count_found(&app.rm) > 0) {
-        for (int g = 0; g < G1_GAME_COUNT; g++) {
-            if (app.rm.games[g].rom_found) {
-                app.rm.selected_game = g;
-                rom_manager_start_extraction(&app.rm, (enum g1_game_id)g);
-                ui_overlay_set_mode(&app.overlay, UI_MODE_EXTRACTION);
-                break;
-            }
-        }
-    } else {
-        /* No ROMs at all: launch directly into USB SD card transfer screen */
-        rom_manager_start_usb(&app.rm);
-        ui_overlay_set_mode(&app.overlay, UI_MODE_USB_STORAGE);
-    }
-    fprintf(stderr, "[G1] Initial mode=%d, selected=%s\n",
+    /* Initial screen: Always start in ROM Picker so the user can select a game or transfer ROMs */
+    rom_manager_ensure_roms_dir();
+    ui_overlay_set_mode(&app.overlay, UI_MODE_ROM_PICKER);
+    fprintf(stderr, "[G1] Initial mode=%d (ROM Picker), selected=%s\n",
             app.overlay.mode, app.rm.games[app.rm.selected_game].display_name);
 
     /* Run the application through mpc-ui-toolkit */

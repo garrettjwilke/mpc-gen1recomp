@@ -52,9 +52,18 @@ static const char *YELLOW_CANDIDATES[] = {
     NULL
 };
 
+void rom_manager_ensure_roms_dir(void) {
+    mkdir("/media/MPC/roms", 0755);
+    mkdir("roms", 0755);
+    mkdir("user", 0755);
+    mkdir("user/roms", 0755);
+    sync();
+}
+
 void rom_manager_init(struct rom_manager *rm) {
     if (!rm) return;
     memset(rm, 0, sizeof(*rm));
+    rom_manager_ensure_roms_dir();
 
     rm->games[G1_GAME_RED].id = G1_GAME_RED;
     rm->games[G1_GAME_RED].tag = "red";
@@ -77,6 +86,7 @@ void rom_manager_init(struct rom_manager *rm) {
 
 void rom_manager_scan(struct rom_manager *rm, const char *base_dir) {
     if (!rm) return;
+    rom_manager_ensure_roms_dir();
 
     const char *const *lists[G1_GAME_COUNT] = {
         RED_CANDIDATES,
@@ -102,6 +112,7 @@ void rom_manager_scan(struct rom_manager *rm, const char *base_dir) {
             if (file_exists(path)) {
                 snprintf(gi->rom_path, sizeof(gi->rom_path), "%s", path);
                 gi->rom_found = true;
+                gi->cache_ready = true;
                 break;
             }
         }
@@ -166,6 +177,7 @@ uint32_t rom_manager_game_color(enum g1_game_id game) {
 
 void rom_manager_start_usb(struct rom_manager *rm) {
     if (!rm) return;
+    rom_manager_ensure_roms_dir();
     ui_usb_sd_init(&rm->usb);
     rm->usb_active = true;
 }

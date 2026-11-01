@@ -47,6 +47,7 @@ struct rom_manager {
 
 void rom_manager_init(struct rom_manager *rm);
 void rom_manager_scan(struct rom_manager *rm, const char *base_dir);
+void rom_manager_ensure_roms_dir(void);
 
 int  rom_manager_count_found(const struct rom_manager *rm);
 int  rom_manager_count_ready(const struct rom_manager *rm);

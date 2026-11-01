@@ -483,26 +483,24 @@ static int draw_rom_picker(struct ui_overlay *o, struct ui *u, const struct inpu
     draw_dimmed_background(u);
     draw_app_bar(u, 0, "SELECT POKEMON GAME");
 
-    char r_row[48], b_row[48], y_row[48];
-    snprintf(r_row, sizeof(r_row), "Pokemon Red   [%s]",
-             rm->games[G1_GAME_RED].cache_ready ? "READY" :
-             rm->games[G1_GAME_RED].rom_found ? "NEEDS EXTRACT" : "MISSING");
-    snprintf(b_row, sizeof(b_row), "Pokemon Blue  [%s]",
-             rm->games[G1_GAME_BLUE].cache_ready ? "READY" :
-             rm->games[G1_GAME_BLUE].rom_found ? "NEEDS EXTRACT" : "MISSING");
-    snprintf(y_row, sizeof(y_row), "Pokemon Yellow[%s]",
-             rm->games[G1_GAME_YELLOW].cache_ready ? "READY" :
-             rm->games[G1_GAME_YELLOW].rom_found ? "NEEDS EXTRACT" : "MISSING");
+    char r_row[64], b_row[64], y_row[64];
+    snprintf(r_row, sizeof(r_row), "Pokemon Red    [%s]",
+             rm->games[G1_GAME_RED].rom_found ? "READY" : "MISSING");
+    snprintf(b_row, sizeof(b_row), "Pokemon Blue   [%s]",
+             rm->games[G1_GAME_BLUE].rom_found ? "READY" : "MISSING");
+    snprintf(y_row, sizeof(y_row), "Pokemon Yellow [%s]",
+             rm->games[G1_GAME_YELLOW].rom_found ? "READY" : "MISSING");
 
+    bool has_running = (runner && g1_runner_is_ready(runner));
     const char *rows[] = {
         r_row,
         b_row,
         y_row,
-        UI_USB_SD_LABEL,
-        "Cancel / Back"
+        "USB SD Card Mode (Transfer ROMs)",
+        has_running ? "Resume Current Game" : "Quit to System"
     };
     int n = 5;
-    int x = 28, y = 38, w = UI_W - 56, h = 6 + n * 22;
+    int x = 20, y = 34, w = UI_W - 40, h = 6 + n * 22;
 
     ui_box(u, x, y, w, h, (struct ui_paint){
         .fill_set = 1, .fill = 0x10141E,
@@ -512,26 +510,32 @@ static int draw_rom_picker(struct ui_overlay *o, struct ui *u, const struct inpu
     int chosen = ui_list(u, x + 4, y + 3, w - 8, n * 22, rows, n, menu_style(), in, &s_rom_ls);
     if (chosen >= 0 && chosen < G1_GAME_COUNT) {
         enum g1_game_id g = (enum g1_game_id)chosen;
-        if (rm->games[g].cache_ready) {
+        if (rm->games[g].rom_found) {
             rm->selected_game = g;
             if (runner) {
                 g1_runner_set_game(runner, g);
-                g1_runner_load_assets(runner, rm->games[g].rom_path);
+                g1_runner_load_rom(runner, rm->games[g].rom_path);
             }
             ui_overlay_show_toast(o, rom_manager_game_name(g), u->now_ms, 1200);
             ui_overlay_set_mode(o, UI_MODE_GAMEPLAY);
-        } else if (rm->games[g].rom_found) {
-            rom_manager_start_extraction(rm, g);
-            ui_overlay_set_mode(o, UI_MODE_EXTRACTION);
         } else {
-            ui_overlay_show_toast(o, "ROM Missing! Mount USB Storage.", u->now_ms, 1800);
+            ui_overlay_show_toast(o, "ROM Missing! Use USB SD Mode to add.", u->now_ms, 2000);
         }
     } else if (chosen == 3) {
+        rom_manager_ensure_roms_dir();
         rom_manager_start_usb(rm);
         ui_overlay_set_mode(o, UI_MODE_USB_STORAGE);
     } else if (chosen == 4) {
-        ui_overlay_set_mode(o, UI_MODE_GAMEPLAY);
+        if (has_running) {
+            ui_overlay_set_mode(o, UI_MODE_GAMEPLAY);
+        } else {
+            return 1; /* Clean exit back to system / boot menu */
+        }
     }
+
+    /* Helpful footer text */
+    ui_text(u, 24, y + h + 10, "SD Card ROM folder: /media/MPC/roms/", 0x8898B0, 1);
+    ui_text(u, 24, y + h + 24, "Put: pokemon_red.gb, blue.gb, yellow.gbc", 0x607088, 1);
 
     draw_toast(u, o, 186);
     return 0;
@@ -569,24 +573,9 @@ int ui_overlay_draw(struct ui_overlay *o,
         case UI_MODE_USB_STORAGE: {
             int rc = rom_manager_draw_usb(rm, u, in);
             if (rc == UI_USB_SD_DONE || rc == UI_USB_SD_FAILED) {
+                rom_manager_ensure_roms_dir();
                 rom_manager_scan(rm, NULL);
-                if (rom_manager_count_ready(rm) > 0 && rm->games[rm->selected_game].cache_ready) {
-                    ui_overlay_set_mode(o, UI_MODE_GAMEPLAY);
-                } else if (rm->games[rm->selected_game].rom_found) {
-                    rom_manager_start_extraction(rm, (enum g1_game_id)rm->selected_game);
-                    ui_overlay_set_mode(o, UI_MODE_EXTRACTION);
-                } else if (rom_manager_count_found(rm) > 0) {
-                    for (int g = 0; g < G1_GAME_COUNT; g++) {
-                        if (rm->games[g].rom_found) {
-                            rm->selected_game = g;
-                            rom_manager_start_extraction(rm, (enum g1_game_id)g);
-                            ui_overlay_set_mode(o, UI_MODE_EXTRACTION);
-                            break;
-                        }
-                    }
-                } else {
-                    ui_overlay_set_mode(o, UI_MODE_GAMEPLAY);
-                }
+                ui_overlay_set_mode(o, UI_MODE_ROM_PICKER);
             }
             return 0;
         }
