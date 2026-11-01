@@ -511,7 +511,10 @@ static int draw_rom_picker(struct ui_overlay *o, struct ui *u, const struct inpu
         enum g1_game_id g = (enum g1_game_id)chosen;
         if (rm->games[g].cache_ready) {
             rm->selected_game = g;
-            if (runner) g1_runner_set_game(runner, g);
+            if (runner) {
+                g1_runner_set_game(runner, g);
+                g1_runner_load_assets(runner, rm->games[g].rom_path);
+            }
             ui_overlay_show_toast(o, rom_manager_game_name(g), u->now_ms, 1200);
             ui_overlay_set_mode(o, UI_MODE_GAMEPLAY);
         } else if (rm->games[g].rom_found) {
@@ -589,7 +592,10 @@ int ui_overlay_draw(struct ui_overlay *o,
             rom_manager_draw_extraction(rm, u);
             if (rm->extract.finished) {
                 rm->selected_game = rm->extract.game_id;
-                if (runner) g1_runner_set_game(runner, rm->extract.game_id);
+                if (runner) {
+                    g1_runner_set_game(runner, rm->extract.game_id);
+                    g1_runner_load_assets(runner, rm->games[rm->extract.game_id].rom_path);
+                }
                 ui_overlay_show_toast(o, "Extraction Finished!", u->now_ms, 1500);
                 ui_overlay_set_mode(o, UI_MODE_GAMEPLAY);
             }

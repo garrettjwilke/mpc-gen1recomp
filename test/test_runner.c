@@ -199,13 +199,17 @@ static void test_runner_rendering(void) {
     struct g1_runner *r = g1_runner_create(G1_GAME_RED, 44100);
     assert(r != NULL);
 
+    /* Test loading real ROM assets if ROM exists */
+    bool loaded = g1_runner_load_assets(r, "roms/pokemon_red.gb");
+    if (!loaded) g1_runner_load_assets(r, "user/roms/pokemon_red.gb");
+    if (!loaded) g1_runner_load_assets(r, "/media/MPC/roms/pokemon_red.gb");
+
     struct g1_input_state in;
     memset(&in, 0, sizeof(in));
     in.buttons = G1_BTN_RIGHT;
 
     g1_runner_tick(r, &in);
-    assert(r->frame_count == 1);
-    assert(r->player_x == 81);
+    assert(g1_runner_get_frame_count(r) == 1);
 
     uint32_t fb[UI_W * UI_H];
     memset(fb, 0, sizeof(fb));

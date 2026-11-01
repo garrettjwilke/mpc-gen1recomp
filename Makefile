@@ -16,10 +16,12 @@ APP = $(BUILD)/mpc-gen1recomp
 
 INCLUDES = -I src -I $(UI)
 
-HOST_CFLAGS = $(WARN) -O2 -g $(INCLUDES)
-DEV_CFLAGS  = $(WARN) -O2 $(INCLUDES)
+DEFINES = -DENABLE_SOUND=1 -DENABLE_LCD=1 -DMINIGB_APU_AUDIO_FORMAT_S16SYS=1 -DAUDIO_SAMPLE_RATE=44100
 
-SRC_APP = src/input_map.c src/audio_engine.c src/ui_overlay.c src/config.c src/cJSON.c src/rom_manager.c src/g1_runner.c
+HOST_CFLAGS = $(WARN) -O2 -g $(INCLUDES) $(DEFINES)
+DEV_CFLAGS  = $(WARN) -O2 $(INCLUDES) $(DEFINES)
+
+SRC_APP = src/input_map.c src/audio_engine.c src/ui_overlay.c src/config.c src/cJSON.c src/rom_manager.c src/g1_runner.c src/minigb_apu.c
 UI_COMMON_SRC = $(UI)/ui.c $(UI)/widgets.c $(UI)/filebrowser.c $(UI)/input.c $(UI)/usb_sd.c
 UI_DEVICE_SRC = $(UI)/app.c $(UI)/screen.c $(UI)/surface.c $(UI_COMMON_SRC)
 

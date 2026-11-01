@@ -163,6 +163,9 @@ int main(int argc, char **argv) {
 
     /* Runner setup */
     app.runner = g1_runner_create((enum g1_game_id)app.rm.selected_game, 44100);
+    if (app.runner) {
+        g1_runner_load_assets(app.runner, app.rm.games[app.rm.selected_game].rom_path);
+    }
 
     /* Overlay setup */
     ui_overlay_init(&app.overlay, bind_path, sett_path);

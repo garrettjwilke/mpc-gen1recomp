@@ -231,10 +231,50 @@ void rom_manager_step_extraction(struct rom_manager *rm, int64_t now_ms) {
 
         /* Create cache directory and rom-cache.complete */
         const char *tag = rm->games[e->game_id].tag;
+        const char *rom_path = rm->games[e->game_id].rom_path;
         mkdir("user", 0755);
+        mkdir(tag, 0755);
         char user_dir[128];
         snprintf(user_dir, sizeof(user_dir), "user/%s", tag);
         mkdir(user_dir, 0755);
+
+        /* Extract real data from ROM */
+        if (rom_path && rom_path[0]) {
+            FILE *rf = fopen(rom_path, "rb");
+            if (rf) {
+                uint8_t cache_buf[4378];
+                memset(cache_buf, 0, sizeof(cache_buf));
+                /* 1. Tileset 2048 bytes from 0x64000 */
+                fseek(rf, 0x64000, SEEK_SET);
+                (void)fread(cache_buf, 1, 2048, rf);
+                /* 2. Blocks 2048 bytes from 0x645e0 */
+                fseek(rf, 0x645e0, SEEK_SET);
+                (void)fread(cache_buf + 2048, 1, 2048, rf);
+                /* 3. Map 90 bytes from 0x182fd */
+                fseek(rf, 0x182fd, SEEK_SET);
+                (void)fread(cache_buf + 4096, 1, 90, rf);
+                /* 4. Sprite 192 bytes from 0x14180 or 0x14571 */
+                long sprite_off = (e->game_id == G1_GAME_YELLOW) ? 0x14571 : 0x14180;
+                fseek(rf, sprite_off, SEEK_SET);
+                (void)fread(cache_buf + 4186, 1, 192, rf);
+                fclose(rf);
+
+                char bin_path[128];
+                snprintf(bin_path, sizeof(bin_path), "user/%s/pallet_town.bin", tag);
+                FILE *wf = fopen(bin_path, "wb");
+                if (wf) {
+                    fwrite(cache_buf, 1, sizeof(cache_buf), wf);
+                    fclose(wf);
+                }
+                char bin_path2[128];
+                snprintf(bin_path2, sizeof(bin_path2), "%s/pallet_town.bin", tag);
+                FILE *wf2 = fopen(bin_path2, "wb");
+                if (wf2) {
+                    fwrite(cache_buf, 1, sizeof(cache_buf), wf2);
+                    fclose(wf2);
+                }
+            }
+        }
 
         char user_marker[128];
         snprintf(user_marker, sizeof(user_marker), "user/%s/rom-cache.complete", tag);
@@ -246,7 +286,6 @@ void rom_manager_step_extraction(struct rom_manager *rm, int64_t now_ms) {
 
         char marker[128];
         snprintf(marker, sizeof(marker), "%s/rom-cache.complete", tag);
-        mkdir(tag, 0755);
         FILE *fp2 = fopen(marker, "wb");
         if (fp2) {
             fprintf(fp2, "ready\n");
