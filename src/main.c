@@ -25,12 +25,54 @@ struct app_state {
     struct audio_engine *audio;
     bool audio_active;
     int64_t start_mono_ns;
+
+    /* Fixed 60Hz / Game Boy VSYNC decoupled timing */
+    int64_t next_tick_ns;
+    int encoder_accum;
+    int pad_latched[16];
+    int pad_latch_vel[16];
 };
+
+#define TICK_NS 16742706LL // Game Boy VSYNC: 70224 * 10^9 / 4194304 = 16.742706 ms (~59.7275 Hz)
 
 static int64_t mono_ns(void) {
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (int64_t)t.tv_sec * 1000000000LL + (int64_t)t.tv_nsec;
+}
+
+static int ticks_due(int64_t now, int64_t *next) {
+    if (*next <= 0) {
+        *next = now + TICK_NS;
+        return 1;
+    }
+    int n = 0;
+    while (now >= *next && n < 2) {
+        *next += TICK_NS;
+        n++;
+    }
+    if (now >= *next)
+        *next = now + TICK_NS;
+    return n;
+}
+
+static int wake_for(int64_t now_ns, int64_t next_ns, bool playing) {
+    if (!playing) return 16;
+    if (next_ns <= now_ns) return 1;
+    int64_t ms = (next_ns - now_ns + 999999LL) / 1000000LL;
+    if (ms < 1) return 1;
+    if (ms > 16) return 16;
+    return (int)ms;
+}
+
+static void latch_game_input(struct app_state *app, const struct input *in) {
+    app->encoder_accum += in->encoder;
+    for (int p = 0; p < 16; p++) {
+        if (in->pad_hit[p] >= 0) {
+            app->pad_latched[p] = 1;
+            app->pad_latch_vel[p] = in->pad_hit[p];
+        }
+    }
 }
 
 static void app_audio_fill(void *ctx, int16_t *dst, int frames) {
@@ -52,7 +94,8 @@ static int frame_cb(struct ui *u, const struct input *in, void *state) {
     struct app_state *app = (struct app_state *)state;
     if (!app) return 1;
 
-    u->now_ms = (mono_ns() - app->start_mono_ns) / 1000000LL;
+    int64_t now_ns = mono_ns();
+    u->now_ms = (now_ns - app->start_mono_ns) / 1000000LL;
 
     /* Handle volume knob */
     if (in->main_moved) {
@@ -74,6 +117,14 @@ static int frame_cb(struct ui *u, const struct input *in, void *state) {
     if (in->down & (1u << IN_STOP)) {
         if (app->overlay.mode == UI_MODE_GAMEPLAY) {
             ui_overlay_set_mode(&app->overlay, UI_MODE_GAME_MENU);
+        }
+    }
+
+    /* Play button resumes gameplay */
+    if (in->down & (1u << IN_PLAY)) {
+        if (app->overlay.mode != UI_MODE_GAMEPLAY && rom_manager_is_ready(&app->rm, (enum g1_game_id)app->rm.selected_game)) {
+            ui_overlay_set_mode(&app->overlay, UI_MODE_GAMEPLAY);
+            app->next_tick_ns = 0;
         }
     }
 
@@ -102,12 +153,37 @@ static int frame_cb(struct ui *u, const struct input *in, void *state) {
     bool should_play_audio = is_gameplay && app->settings.speaker_on;
     audio_set_active(app, should_play_audio);
 
-    /* Overlay and UI update */
-    int should_quit = ui_overlay_draw(&app->overlay, u, in, app->runner,
-                                      &app->map, &app->settings, &app->rm);
+    /* Fixed-rate simulation timing decoupled from UI events */
+    int ticks = 0;
+    struct input tick_in = *in;
 
-    /* Request 60 FPS continuous redraw */
-    ui_wake(u, 16);
+    if (is_gameplay && app->runner && g1_runner_is_ready(app->runner) && !g1_runner_is_paused(app->runner)) {
+        latch_game_input(app, in);
+        ticks = ticks_due(now_ns, &app->next_tick_ns);
+        if (ticks > 0) {
+            tick_in.encoder = app->encoder_accum;
+            for (int p = 0; p < 16; p++) {
+                if (app->pad_latched[p] && !tick_in.pad_down[p]) {
+                    tick_in.pad_down[p] = 1;
+                    if (tick_in.pad_vel[p] <= 0)
+                        tick_in.pad_vel[p] = app->pad_latch_vel[p];
+                }
+            }
+            app->encoder_accum = 0;
+            memset(app->pad_latched, 0, sizeof(app->pad_latched));
+        }
+    } else {
+        app->next_tick_ns = 0;
+        app->encoder_accum = 0;
+        memset(app->pad_latched, 0, sizeof(app->pad_latched));
+    }
+
+    /* Overlay and UI update */
+    int should_quit = ui_overlay_draw(&app->overlay, u, &tick_in, app->runner,
+                                      &app->map, &app->settings, &app->rm, ticks);
+
+    /* Wake exactly when next tick is due, or 16ms for menus */
+    ui_wake(u, wake_for(now_ns, app->next_tick_ns, is_gameplay));
 
     return should_quit;
 }

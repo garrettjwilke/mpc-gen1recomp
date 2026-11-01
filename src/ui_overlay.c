@@ -156,7 +156,7 @@ static struct ui_list_style menu_style(void) {
  * ------------------------------------------------------------------------- */
 static int draw_gameplay_mode(struct ui_overlay *o, struct ui *u, const struct input *in,
                               struct g1_runner *runner, struct input_map *map,
-                              struct app_settings *settings) {
+                              struct app_settings *settings, int ticks) {
     if (handle_top_buttons(o, in)) return 0;
 
     struct g1_input_state g1_in;
@@ -180,15 +180,18 @@ static int draw_gameplay_mode(struct ui_overlay *o, struct ui *u, const struct i
     }
 
     if (g1_in.quick_save_trigger) {
-        ui_overlay_show_toast(o, "Quick State Saved", u->now_ms, 1200);
+        if (runner) g1_runner_save_sram(runner);
+        ui_overlay_show_toast(o, "Game Saved", u->now_ms, 1200);
     }
     if (g1_in.quick_load_trigger) {
         ui_overlay_show_toast(o, "Quick State Loaded", u->now_ms, 1200);
     }
 
-    /* Advance runner */
-    if (runner) {
-        g1_runner_tick(runner, &g1_in);
+    /* Advance runner ONLY for the number of ticks due */
+    if (runner && ticks > 0) {
+        for (int i = 0; i < ticks; i++) {
+            g1_runner_tick(runner, &g1_in);
+        }
         g1_runner_render(runner, u->px, settings->screen_mode, settings->palette);
     }
 
@@ -543,12 +546,13 @@ int ui_overlay_draw(struct ui_overlay *o,
                     struct g1_runner *runner,
                     struct input_map *map,
                     struct app_settings *settings,
-                    struct rom_manager *rm) {
+                    struct rom_manager *rm,
+                    int ticks) {
     if (!o || !u) return 0;
 
     switch (o->mode) {
         case UI_MODE_GAMEPLAY:
-            return draw_gameplay_mode(o, u, in, runner, map, settings);
+            return draw_gameplay_mode(o, u, in, runner, map, settings, ticks);
 
         case UI_MODE_GAME_MENU:
             return draw_game_menu(o, u, in, runner, map, settings, rm);

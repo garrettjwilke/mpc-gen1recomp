@@ -211,8 +211,9 @@ struct g1_runner *g1_runner_create(enum g1_game_id game, int samplerate) {
 
     pthread_mutex_init(&r->audio_lock, NULL);
     r->audio_ring_read = 0;
-    r->audio_ring_write = 0;
-    r->audio_ring_count = 0;
+    r->audio_ring_write = 1024;
+    r->audio_ring_count = 1024;
+    memset(r->audio_ring, 0, 1024 * 2 * sizeof(int16_t));
 
     s_active_runner = r;
     return r;
@@ -250,8 +251,9 @@ void g1_runner_reset(struct g1_runner *r) {
 
     pthread_mutex_lock(&r->audio_lock);
     r->audio_ring_read = 0;
-    r->audio_ring_write = 0;
-    r->audio_ring_count = 0;
+    r->audio_ring_write = 1024;
+    r->audio_ring_count = 1024;
+    memset(r->audio_ring, 0, 1024 * 2 * sizeof(int16_t));
     pthread_mutex_unlock(&r->audio_lock);
 }
 
@@ -368,6 +370,13 @@ bool g1_runner_load_rom(struct g1_runner *r, const char *rom_path) {
     gb_init_lcd(&r->gb, lcd_draw_line);
     r->gb_initialized = true;
 
+    pthread_mutex_lock(&r->audio_lock);
+    r->audio_ring_read = 0;
+    r->audio_ring_write = 1024;
+    r->audio_ring_count = 1024;
+    memset(r->audio_ring, 0, 1024 * 2 * sizeof(int16_t));
+    pthread_mutex_unlock(&r->audio_lock);
+
     fprintf(stderr, "[G1] Peanut-GB loaded %s successfully (%zu bytes)\n", rom_path, r->rom_size);
     return true;
 }
@@ -408,26 +417,30 @@ void g1_runner_tick(struct g1_runner *r, const struct g1_input_state *in) {
         int16_t frame_audio[AUDIO_SAMPLES_TOTAL];
         minigb_apu_audio_callback(&r->apu, frame_audio);
 
-        /* Push into ring buffer */
+        /* Push into ring buffer with adaptive drift compensation */
         pthread_mutex_lock(&r->audio_lock);
 
-        /* Drop oldest audio frames if ring is backing up beyond max latency */
-        while (r->audio_ring_count + AUDIO_SAMPLES > MAX_AUDIO_LATENCY_FRAMES && r->audio_ring_count > 0) {
-            int drop = (r->audio_ring_count + AUDIO_SAMPLES) - MAX_AUDIO_LATENCY_FRAMES;
-            if (drop > r->audio_ring_count) drop = r->audio_ring_count;
-            r->audio_ring_read = (r->audio_ring_read + drop) % AUDIO_RING_FRAMES;
-            r->audio_ring_count -= drop;
+        int copy_frames = AUDIO_SAMPLES; // 738
+        if (r->audio_ring_count < 768) {
+            /* Gently nudge up buffer level */
+            copy_frames = AUDIO_SAMPLES + 1; // 739
+        } else if (r->audio_ring_count > 1536) {
+            /* Gently nudge down buffer level */
+            copy_frames = AUDIO_SAMPLES - 1; // 737
         }
 
-        int copy_frames = AUDIO_SAMPLES;
-        if (r->audio_ring_count + copy_frames > AUDIO_RING_FRAMES) {
-            copy_frames = AUDIO_RING_FRAMES - r->audio_ring_count;
+        /* Protect against extreme hitch recovery */
+        if (r->audio_ring_count > 3072) {
+            int drop = r->audio_ring_count - 1024;
+            r->audio_ring_read = (r->audio_ring_read + drop) % AUDIO_RING_FRAMES;
+            r->audio_ring_count = 1024;
         }
 
         for (int i = 0; i < copy_frames; i++) {
+            int src_i = (i < (int)AUDIO_SAMPLES) ? i : ((int)AUDIO_SAMPLES - 1);
             int idx = (r->audio_ring_write + i) % AUDIO_RING_FRAMES;
-            r->audio_ring[idx * 2 + 0] = frame_audio[i * 2 + 0];
-            r->audio_ring[idx * 2 + 1] = frame_audio[i * 2 + 1];
+            r->audio_ring[idx * 2 + 0] = frame_audio[src_i * 2 + 0];
+            r->audio_ring[idx * 2 + 1] = frame_audio[src_i * 2 + 1];
         }
         r->audio_ring_write = (r->audio_ring_write + copy_frames) % AUDIO_RING_FRAMES;
         r->audio_ring_count += copy_frames;

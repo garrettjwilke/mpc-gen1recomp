@@ -60,7 +60,8 @@ int ui_overlay_draw(struct ui_overlay *o,
                     struct g1_runner *runner,
                     struct input_map *map,
                     struct app_settings *settings,
-                    struct rom_manager *rm);
+                    struct rom_manager *rm,
+                    int ticks);
 
 #endif /* MPC_G1_UI_OVERLAY_H */
 
