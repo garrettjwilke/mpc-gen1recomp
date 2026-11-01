@@ -1,0 +1,6 @@
+[submodule "gen1recomp"]
+	path = gen1recomp
+	url = https://github.com/bryanthaboi/gen1recomp.git
+[submodule "mpc-ui-toolkit"]
+	path = mpc-ui-toolkit
+	url = https://github.com/garrettjwilke/mpc-ui-toolkit.git
