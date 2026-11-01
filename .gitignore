@@ -1,0 +1,10 @@
+build/
+bin/
+user/
+red/
+blue/
+yellow/
+.DS_Store
+*.o
+*.a
+
