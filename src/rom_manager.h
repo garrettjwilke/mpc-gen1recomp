@@ -20,7 +20,7 @@ struct g1_game_info {
     const char *tag;            /* "red", "blue", "yellow" */
     const char *display_name;   /* "Pokemon Red", "Pokemon Blue", "Pokemon Yellow" */
     uint32_t theme_color;       /* Red (0xFF1744), Blue (0x00B0FF), Yellow (0xFFD600) */
-    char rom_path[256];         /* Path to ROM file if found */
+    char rom_path[512];         /* Path to ROM file if found */
     bool rom_found;             /* True if ROM file exists */
     bool cache_ready;           /* True if rom-cache.complete exists */
 };
@@ -48,6 +48,7 @@ struct rom_manager {
 void rom_manager_init(struct rom_manager *rm);
 void rom_manager_scan(struct rom_manager *rm, const char *base_dir);
 void rom_manager_ensure_roms_dir(void);
+bool rom_manager_sha1_file(const char *path, uint8_t out_digest[20]);
 
 int  rom_manager_count_found(const struct rom_manager *rm);
 int  rom_manager_count_ready(const struct rom_manager *rm);

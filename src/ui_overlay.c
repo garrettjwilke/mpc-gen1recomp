@@ -534,8 +534,8 @@ static int draw_rom_picker(struct ui_overlay *o, struct ui *u, const struct inpu
     }
 
     /* Helpful footer text */
-    ui_text(u, 24, y + h + 10, "SD Card ROM folder: /media/MPC/roms/", 0x8898B0, 1);
-    ui_text(u, 24, y + h + 24, "Put: pokemon_red.gb, blue.gb, yellow.gbc", 0x607088, 1);
+    ui_text(u, 24, y + h + 10, "Put ROMs in SD Card /roms/ (or root)", 0x8898B0, 1);
+    ui_text(u, 24, y + h + 24, "Any filename works (matched by SHA-1)", 0x607088, 1);
 
     draw_toast(u, o, 186);
     return 0;

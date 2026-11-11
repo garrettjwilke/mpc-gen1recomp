@@ -133,6 +133,108 @@ static void test_config_roundtrip(void) {
     unlink(tmp_bind);
 }
 
+static bool copy_file_bytes(const char *src, const char *dst) {
+    FILE *in = fopen(src, "rb");
+    if (!in) return false;
+    FILE *out = fopen(dst, "wb");
+    if (!out) {
+        fclose(in);
+        return false;
+    }
+    uint8_t buf[32768];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            fclose(in);
+            fclose(out);
+            return false;
+        }
+    }
+    fclose(in);
+    fclose(out);
+    return true;
+}
+
+static void test_sha1_and_hash_discovery(void) {
+    printf("[TEST] SHA-1 computation and arbitrary-filename ROM discovery...\n");
+
+    /* 1. Verify SHA-1 against standard FIPS 180-4 test vector "abc" -> a9993e364706816aba3e25717850c26c9cd0d89d */
+    const char *abc_path = "/tmp/mpc_g1_sha1_abc.bin";
+    FILE *f = fopen(abc_path, "wb");
+    assert(f != NULL);
+    fwrite("abc", 1, 3, f);
+    fclose(f);
+
+    uint8_t digest[20];
+    assert(rom_manager_sha1_file(abc_path, digest));
+    const uint8_t want_abc[20] = {
+        0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a, 0xba, 0x3e,
+        0x25, 0x71, 0x78, 0x50, 0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d
+    };
+    assert(memcmp(digest, want_abc, 20) == 0);
+    unlink(abc_path);
+
+    /* 2. Verify empty file SHA-1 -> da39a3ee5e6b4b0d3255bfef95601890afd80709 */
+    const char *empty_path = "/tmp/mpc_g1_sha1_empty.bin";
+    f = fopen(empty_path, "wb");
+    assert(f != NULL);
+    fclose(f);
+    assert(rom_manager_sha1_file(empty_path, digest));
+    const uint8_t want_empty[20] = {
+        0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d, 0x32, 0x55,
+        0xbf, 0xef, 0x95, 0x60, 0x18, 0x90, 0xaf, 0xd8, 0x07, 0x09
+    };
+    assert(memcmp(digest, want_empty, 20) == 0);
+    unlink(empty_path);
+
+    /* 3. Verify ROM discovery by hash with arbitrary / No-Intro filenames and nested dir */
+    const char *tmp_root = "/tmp/mpc_g1_hash_scan_test";
+    const char *tmp_roms = "/tmp/mpc_g1_hash_scan_test/roms";
+    const char *tmp_sub  = "/tmp/mpc_g1_hash_scan_test/roms/GameBoy";
+    mkdir(tmp_root, 0755);
+    mkdir(tmp_roms, 0755);
+    mkdir(tmp_sub, 0755);
+
+    const char *red_dst    = "/tmp/mpc_g1_hash_scan_test/roms/Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb";
+    const char *blue_dst   = "/tmp/mpc_g1_hash_scan_test/roms/arbitrary_name_blue.bin";
+    const char *yellow_dst = "/tmp/mpc_g1_hash_scan_test/roms/GameBoy/POKEMON YELLOW.GBC";
+    const char *bogus_dst  = "/tmp/mpc_g1_hash_scan_test/roms/pokemon_red.gb"; /* 1MB zeroes named pokemon_red.gb must NOT match! */
+
+    assert(copy_file_bytes("roms/pokemon_red.gb", red_dst));
+    assert(copy_file_bytes("roms/pokemon_blue.gb", blue_dst));
+    assert(copy_file_bytes("roms/pokemon_yellow.gbc", yellow_dst));
+
+    f = fopen(bogus_dst, "wb");
+    assert(f != NULL);
+    uint8_t zeros[4096];
+    memset(zeros, 0, sizeof(zeros));
+    for (int i = 0; i < 256; i++) fwrite(zeros, 1, sizeof(zeros), f); /* 1048576 bytes of 0 */
+    fclose(f);
+
+    struct rom_manager rm;
+    rom_manager_init(&rm);
+    rom_manager_scan(&rm, tmp_root);
+
+    assert(rm.games[G1_GAME_RED].rom_found == true);
+    assert(strcmp(rm.games[G1_GAME_RED].rom_path, red_dst) == 0);
+
+    assert(rm.games[G1_GAME_BLUE].rom_found == true);
+    assert(strcmp(rm.games[G1_GAME_BLUE].rom_path, blue_dst) == 0);
+
+    assert(rm.games[G1_GAME_YELLOW].rom_found == true);
+    assert(strcmp(rm.games[G1_GAME_YELLOW].rom_path, yellow_dst) == 0);
+
+    assert(rom_manager_count_found(&rm) == 3);
+
+    unlink(red_dst);
+    unlink(blue_dst);
+    unlink(yellow_dst);
+    unlink(bogus_dst);
+    rmdir(tmp_sub);
+    rmdir(tmp_roms);
+    rmdir(tmp_root);
+}
+
 static void test_rom_manager_and_extraction(void) {
     printf("[TEST] ROM manager scanning and on-device extraction...\n");
     struct rom_manager rm;
@@ -246,6 +348,7 @@ int main(void) {
     test_presets();
     test_input_translation_and_rebind();
     test_config_roundtrip();
+    test_sha1_and_hash_discovery();
     test_rom_manager_and_extraction();
     test_usb_sd_mock();
     test_runner_rendering();
